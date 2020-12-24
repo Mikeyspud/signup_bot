@@ -1,74 +1,84 @@
+from .planetman import Planetman
+
 class Squad:
 
-    def __init__(self):
+    def __init__(self, sl=None, fl=None, composition=None):
 
-        self.sl = None
-        self.fl = None
-        self.composition = None
-        self.members = {}
+        self.sl = sl
+        self.fl = fl
+        self.composition = composition
+        self.members = []
 
     def __str__(self):
 
-        message = f"""Squad Lead: {self.sl}
-                    Fireteam Lead: {self.fl}
-                    Composition: {self.composition}
-                    Members:"""
+        return str(self.__dict__)
 
-        if self.members:
-            for key, value in self.members.items():
-                message += f"{key}: {value}"
-        else:
-            message += "Should probably get some friends"
+    def __repr__(self):
 
-        return message
-
-    def set_comp(self, comp):
-
-        self.composition = comp
+        return repr(self.__dict__)
 
     def add(self, name, role):
 
-        if self.composition:
-            if role in self.composition:
-                if self.composition[role] == 0:
-                    raise SquadCapacity()
-                else:
-                    self.composition[role] -= 1
+        '''
+        Checks if the composition of the squad will allow the adition
+        of the new squad member. Should composition be undefined, it is caught
+        by the except TypeError: statement'
+        '''
+
+        try:
+            if self.check_for_space(role) is False:
+                self.composition[role] -= 1
             else:
-                raise SquadRole()
-        if name in self.members:
-            self.remove(name)
-        self.members[name] = role
+                raise SquadCapacity
+        except KeyError:
+            raise SquadRole
+        except TypeError:
+            pass
+
+        '''
+        Checks if name is already in self.members. If it is, it will
+        remove the member before readding
+        '''
+
+        for index, member in enumerate(self.members):
+            if member.name == name:
+                del self.members[index]
+
+        self.members.append(Planetman(name, role))
+
+    def check_for_space(self, role):
+
+        try:
+            return self.composition[role] < 1
+        except KeyError:
+            return False
 
     def remove(self, name):
 
-        if name in self.members:
-            if self.composition:
-                role = self.members[name]
-                self.composition[role] += 1
-            del self.members[name]
-        if name == self.sl:
-            self.del_sl(name)
-        if name == self.fl:
-            self.del_fl(name)
-#        else:
-#            raise Exception("That member is not in the squad")
+        '''
+        Iterates through self.members (List) looking for any Planetman 
+        object with the Planetman.name as name and removes from the members
+        list
+        '''
 
-    def set_sl(self, name):
+        for index, member in enumerate(self.members):
+            if member.name == name:
+                try:
+                    self.composition[member.role] += 1
+                except:
+                    pass
+                del self.members[index]
 
-        self.sl = name
+        '''
+        There are instances where name also equals Squad.sl or Squad.fl
+        In this instance, Squad.sl or Squad.fl should also be removed
+        '''
 
-    def set_fl(self, name):
+        if self.sl == name:
+            self.sl = None
 
-        self.fl = name
-
-    def del_sl(self, name):
-
-        self.sl = None
-
-    def del_fl(self, name):
-
-        self.fl = None
+        if self.fl == name:
+            self.fl = None
 
 class SquadError(Exception):
 

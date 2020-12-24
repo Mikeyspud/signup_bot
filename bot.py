@@ -1,417 +1,694 @@
-import os
-import pymongo
-import discord
-import operation
+import pymongo                          #mongodb API
+import discord                          #discord API
+from discord.ext import commands        #discord API
+import json                             #used to dictify json strings
 
-from errors import *
-from discord.ext import commands
+import operation                        #custom objects
+from errors import *                    #custom errors
 
-TOKEN = open("token.txt","r").readline()
+
+#TOKEN required to authenticate with Discord API Servers
+TOKEN = open("token.txt", "r").readline()
+
+#Mongodb variables
 mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
-squad_db = mongo_client["squad_template"]
-op_db = mongo_client["operation_template"]
-squad_collection = squad_db["template"]
-op_collection = op_db["template"]
 
+squad_db = mongo_client["squad_template"]
+squad_collection = squad_db["template"]
+
+op_db = mongo_client["operation_template"]
+op_collection = mongo_client["template"]
+
+alias_db = mongo_client["alias"]
+alias_collection = mongo_client["alias"]
+
+#General Global Variables
+#Holds the discord channel id's where operations have been started
 operation_dict = {}
+
+#Nested dict that holds the message id's for each squad and its embedded message
 embed_dict = {}
-template_dict = {}
+
+#History dict that holds the command history for each channel id
+history_dict = {}
+
+#Alias dict stores the alias names for roles
+alias_dict = {}
+
+#Server Name
 server_name = "BJay"
+
+#Command Prefix (This can be changed without adverse affects)
 client = commands.Bot(command_prefix=".")
+
+#Removes the built-in help command so that we can add our own later
 client.remove_command("help")
+
 
 @client.event
 async def on_ready():
     print(f"{client.user} has connected to discord")
 
+
+'''
+Command listener for alias command
+Alias command syntax:
+    .alias [role] [alias] [alias] -> infinity
+'''
 @client.command(pass_context=True)
-async def db(ctx, *args):
+async def alias(ctx, *args):
 
     user = ctx.message.author
+    channel_id = ctx.channel.id
 
-    db_dict = {"show": db_show}
+    '''
+    Checks if the number of arguments supplied is correct. If not raise InvalidArguments and
+    inform the user
+    '''
+    if len(args) < 2:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Alias: syntax is as follows = .alias [role] [alias-1...alias-n]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
 
+    '''
+    if args[0] is "force". Then we overwrite existing aliases and remove mentions of each alias
+    in other roles
+    '''
+    if args[0] == "force":
+        await alias_force(ctx, *args)
+    else:
 
-    await db_dict[args[0]](ctx, *args)
+        '''
+        Checks if a request alias is already an alias for another class
+        OR if reqeusted alias is already a class
+        '''
+        for alias in args[1:]:
+            if alias in alias_dict:
+                await user.send(embed=debug_message(error_class="information",
+                    message=f"Alias: alias {alias} is already a role",
+                    channel_id=channel_id))
+                await ctx.message.delete()
+                raise InvalidArguments
+
+        for role, alias_set in alias_dict.items():
+            for alias in alias_set:
+                if alias in args[1:]:
+                    await user.send(embed=debug_message(error_class="information",
+                        message=f"Alias: {alias} is already an alias for {role}",
+                        channel_id=channel_id))
+                    await ctx.message.delete()
+                    raise InvalidArguments
+
+        role = args[0]
+        if role not in alias_dict:
+            alias_dict[role] = set()
+
+        alias_dict[role].update(args[1:])
+
+    '''
+    Updates the alias database entry on mongodb. First, the alias_set needs to be
+    converted into a JSON String
+    '''
+    #json_alias_dict = json.loads(alias_dict)
+    #alias_collection.insert(alias_dict)
+
     await ctx.message.delete()
 
-async def db_show(ctx, *args):
+'''
+Alias Force allows a user to update an existing alias entry
+'''
+async def alias_force(ctx, *args):
+
+    for role, alias_set in alias_dict.items():
+        for alias in args[2:]:
+            alias_set.discard(alias)
+
+    role = args[1]
+    alias_dict[role] = set()
+    alias_dict[role].update(args[2:])
+
+'''
+The command listener for the 'create' command
+'''
+@client.command(pass_context=True)
+async def create(ctx, *args):
 
     user = ctx.message.author
+    channel_id = ctx.channel.id
 
+    '''
+    The list of arguments for the create command
+
+    operation - Creates a new operation in that discord channel
+    squad - Creates a new squad for the operation in that discord channel
+    '''
+    commands = {"operation": create_operation,
+                "squad": create_squad}
+
+    '''
+    Checks for args[0] (create argument). If it does not exist inform the user who sent
+    the command by sending them a direct embed message before raising InvalidArguments to
+    prevent additional errors
+    '''
     try:
-        if args[1] == "squad":
-            for x in squad_collection.find():
-                await ctx.send(x)
-        if args[1] == "operation":
-            for x in op_collection.find():
-                await ctx.send(x)
+        command = args[0]
     except IndexError:
-        user.send("Invalid Arguments")
+        await user.send(embed=debug_message(error_class="information",
+            message=f"Command: create - takes the following arguments\n{str(commands.keys())}",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
 
-@client.command(pass_context=True)
-async def hide(ctx, *args):
+    '''
+    Calls the respective function inside the command_dict depending on args[0].
+    If there is no respective function, then inform the user they sent the wrong argument
+    with the 'create {args[0]}' command
+    '''
+    try:
+        await commands[command](ctx, *args)
+    except KeyError:
+        await user.send(embed=debug_message(error_class="information",
+            message=f"Command: create {args[0]} does not exist",
+            channel_id=channel_id))
+
+    update_history_dict(channel_id, ctx.message.content)
+    await ctx.message.delete()
+
+async def create_operation(ctx, *args):
 
     user = ctx.message.author
+    channel_id = ctx.channel.id
 
-    for squad in args:
-        embed = await ctx.channel.fetch_message(embed_dict[ctx.channel.id][squad])
-        await embed.delete()
 
+    '''
+    Checks for the existence of arg[1]. If it doesnt exist, inform the user
+    they missed a positional argument
+    '''
+    try:
+        operation_name = args[1]
+    except IndexError:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Command create operation - takes the following positional arguments\n[name]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Checks operation_dict for an existing operation in that channel_id. If there is no
+    existing operation, then create it, assign it the name args[1] and send a summary of the operation in
+    the channel. If there is an existing operation, then inform the user.
+    '''
+    if channel_id not in operation_dict:
+        operation_dict[channel_id] = operation.Operation(name=operation_name)
+        embed_dict[channel_id] = {"op": None, "alpha": None, "bravo": None, "charlie": None, "delta": None}
+        await update_operation_summary(ctx)
+    else:
+        operation_name = operation_dict[channel_id].name
+        await user.send(embed=debug_message(error_class="error",
+            message=f"Operation: {operation_name} exists in channel {channel_id}",
+            channel_id=channel_id))
+
+async def create_squad(ctx, *args):
+
+    user = ctx.message.author
+    channel_id = ctx.channel.id
+
+    '''
+    Checks for existence of args[1] (squad_name). If it doesnt exist, inform
+    the user they missed a positional argument
+    '''
+
+    try:
+        squad_name = args[1]
+    except:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Command create squad - takes the following positional arguments\n[squad_name]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Checks the existence of the operation in that channel_id. If there is no existing operation,
+    inform the user, delete their message and raise NoOperationExists to prevent further errors
+    '''
+    if channel_id not in operation_dict:
+        await user.send(embed=debug_message(error_class="error",
+            message=f"Operation: does not exist in this channel. Please create one",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise NoOperationExists
+
+    '''
+    Attempts to create the squad [args(1)]. Squad name should be valid. If the squad exists, inform the user.
+    If the squad_name is invalid, inform the user
+    '''
+    operation_object = operation_dict[channel_id]
+    if squad_name not in operation_object.squads:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Squad: {squad_name} is not a valid squad name. Please choose alpha|bravo|charlie|delta",
+            channel_id=channel_id))
+    elif isinstance(operation_object.squads[squad_name], operation.squad.Squad):
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Squad: {squad_name} already exists for operation {operation_object.name}",
+            channel_id=channel_id))
+    else:
+        operation_object.squads[squad_name] = operation.squad.Squad()
+        await update_operation_summary(ctx)
+
+
+@client.command(pass_context=True)
+async def squad(ctx, *args):
+
+    user = ctx.message.author
+    channel_id = ctx.channel.id
+
+    '''
+    The list of arguments for the squad command
+
+    composition - Sets the squad composition
+    sl - Sets the squad sl
+    fl - Sets the squad fl
+    '''
+    command_list = ["composition", "sl", "fl"]
+
+    '''
+    The squad command should only take 3 arguments. Therefor, raise InvalidArguments to prevent further errors
+    and inform the user
+    '''
+    if len(args) != 3:
+        await ctx.send(len(args))
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Command: squad takes the following argument {command_list} - Exmaple: squad alpha sl bob",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Checks for args[1] (create argument). If it does not exist inform the user who sent
+    the command by sending them a direct embed message before raising InvalidArguments to
+    prevent additional errors
+    '''
+    if args[1] not in command_list:
+        await user.send(embed=debug_message(error_class="information",
+            message=f"Command: squad - takes the following arguments {command_list} - Example: squad alpha sl bob",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+    else:
+        command = args[1]
+
+    '''
+    Checks to see if an operation exists in the channel. If not,
+    inform the user and raise NoOperationExists to prevent further errors
+    '''
+    try:
+        operation_object = operation_dict[channel_id]
+    except KeyError:
+        await user.send(embed=debug_message(error_class="error",
+            message="Squad: No operation created in this channel yet",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise NoOperationExists
+
+
+    '''
+    Checks if args[0] (squad name) is a valid squad name. If not, inform the user and raise
+    InvaldArguments to prevent further errors
+    '''
+    if args[0] not in operation_object.squads:
+        await user.send(embed=debug_message(error_class="error",
+            message=f"Squad: {args[0]} is not a valid squad. Please use alpha|bravo|charlie|delta",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+    else:
+        squad_name = args[0]
+        squad = operation_object.squads[squad_name]
+
+    '''
+    The command issued (args[1]) will execute the respective block of code
+    '''
+    if command  == "composition":
+        '''
+        If the composition sent is not a JSON String, inform the user and raise InvalidArguments
+        to prevent any further errors.
+        '''
+        try:
+            composition = json.loads(args[2].replace("'", '"'))
+            squad.composition = composition
+            update_history_dict(channel_id, ctx.message.content)
+        except json.decoder.JSONDecodeError:
+            await user.send(embed=debug_message(error_class="warning",
+                message=f"Squad: {args[0]} composition {args[2]} is not a valid composition\nNeeds to be JSON String",
+                channel_id=channel_id))
+            await ctx.message.delete()
+            raise InvalidArguments
+    elif command == "sl":
+        squad_leader = args[2]
+        squad.sl = squad_leader
+    else:
+        fireteam_leader = args[2]
+        squad.fl = fireteam_leader
+
+    await update_operation_summary(ctx)
     await ctx.message.delete()
 
 @client.command(pass_context=True)
-async def close(ctx):
+async def squad_composition(ctx, *args):
 
     user = ctx.message.author
-#
-#    try:
-#        operation_dict[ctx.channel.id] = None
-#        for embed_id in embed_dict[ctx.channel.id].values():
-#            embed_msg = await ctx.channel.fetch_message(embed_id)
-#            await embed_msg.delete()
-#        close.stop()
-#    except KeyError:
-#        await user.send("Operation does not exist")
+    channel_id = ctx.channel.id
 
-    await user.send("Not implemented")
-    await ctx.message.delete()
-
-@client.command(pass_context=True)
-async def set(ctx, *args):
-
-    user = ctx.message.author
-
-    set_dict = {"sl": set_slfl,
-            "fl": set_slfl,
-            "start": set_start,
-            "end": set_end,
-            "template": set_template}
-
+    '''
+    Checks to see if an operation exists in the channel. If not,
+    inform the user and raise NoOperationExists to prevent further errors
+    '''
     try:
-        await set_dict[args[1]](ctx, *args)
+        operation_object = operation_dict[channel_id]
     except KeyError:
-        await user.send("Command does not exist")
-#    except IndexError:
-#        await user.send("You must specify an additional option")
+        await user.send(embed=debug_message(error_class="error",
+            message="Squad: No operation created in this channel yet",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise NoOperationExists
 
-    await ctx.message.delete()
+    '''
+    Checks if the appriopriate number of arguments have been sent.
+    If not, inform the user and then raise InvalidArguments to prevent any
+    other errors
+    '''
+    if len(args) == 3:
+        await user.send(embed=debug_message(error_class="error",
+            message="Add: not sent correct number of arguments. The syntax is \nsquad [squad_name] composition [composition]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
 
-async def set_template(ctx, *args):
-
-    user = ctx.message.author
-
-    try:
-        if len(args) != 3:
-            raise InvalidArguments
-        op = operation_dict[ctx.channel.id]
-        if args[0] not in op.squads:
-            raise InvalidSquad
-        squad = op.squads[args[0]]
-        if args[2] == "none":
-            squad.set_comp(None)
-        else:
-            query = { "name": args[2] }
-            template = squad_collection.find(query)
-            for x in template:
-                x.pop("_id", None)
-                x.pop("name", None)
-                squad.set_comp(x)
-        await update_embed(ctx, args[0])
-    except InvalidArguments:
-        await user.send("Invalid Arguments")
-    except InvalidSquad:
-        await user.send("Invalid squad name")
-    except AttributeError:
-        await user.send("That squad does not exist")
-
-async def set_start(ctx, *args):
-
-    user = ctx.message.author
-
-    try:
-        if len(args) != 2:
-            raise InvalidArguments
-        op = operation_dict[ctx.channel.id]
-        op.set_start(args[1])
-        await update_embed(ctx, "op")
-    except KeyError:
-        await user.send("Operation does not exist")
-    except InvalidArguments:
-        await user.send("Invalid Arguments")
-
-async def set_end(ctx, *args):
-
-    user = ctx.message.author
-
-    try:
-        if len(args) != 2:
-            raise InvalidArguments
-        op = operation_dict[ctx.channel.id]
-        op.set_end(args[1])
-        await update_embed(ctx, "op")
-    except KeyError:
-        await user.send("Operation does not exist")
-    except InvalidArguments:
-        await user.send("Invalid Arguments")
-
-async def set_slfl(ctx, *args):
-
-    user = ctx.message.author
-
-    try:
-        if 2 >= len(args) >= 3:
-            raise InvalidArguments
-        op = operation_dict[ctx.channel.id]
-        if args[0] not in op.squads:
-            raise InvalidSquad
-        squad = op.squads[args[0]]
-        if len(args) == 3:
-            user.nick = args[2]
-        if args[1] == "sl":
-            squad.set_sl(user.nick)
-        elif args[1] == "fl":
-            squad.set_fl(user.nick)
-        else:
-            raise InvalidArguments
-        await update_embed(ctx, args[0])
-    except AttributeError:
-        await user.send("ERROR - This squad does not exist")
-    except InvalidSquad:
-        await user.send("ERROR - Invalid Squad")
-    except InvalidArguments:
-        await user.send("ERROR - Invalid parameters")
-    except KeyError:
-        await user.send("ERROR - Operation not created in this channel")
 
 @client.command(pass_context=True)
 async def add(ctx, *args):
 
     user = ctx.message.author
+    channel_id = ctx.channel.id
 
+    '''
+    Checks to see if an operation exists in the channel. If not,
+    inform the user and raise NoOperationExists to prevent further errors
+    '''
     try:
-        if 2 >= len(args) >= 3:
-            raise InvalidArguments
-        op = operation_dict[ctx.channel.id]
-        if args[0] not in op.squads:
-            raise InvalidSquad
-        squad = op.squads[args[0]]
-        if len(args) == 3:
-            squad.add(args[2], args[1])
-        else:
-            squad.add(user.nick, args[1])
-        await update_embed(ctx, args[0])
+        operation_object = operation_dict[channel_id]
     except KeyError:
-        await user.send("ERROR - No operation has been created in this channel")
-    except AttributeError:
-        await user.send("This squad does not exist")
-    except InvalidArguments:
-        await user.send("ERROR - You sent bad parameters")
-    except InvalidSquad:
-        await user.send("ERROR - This is not a squad")
-    except operation.squad.SquadCapacity:
-        await user.send("Sorry, no more slots for that class")
-    except operation.squad.SquadRole:
-        await user.send("Sorry, that role is not valid for this squad")
+        await user.send(embed=debug_message(error_class="error",
+            message="Add: No operation created in this channel yet",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise NoOperationExists
 
+    '''
+    Checks if the appriopriate number of arguments have been sent.
+    If not, inform the user and then raise InvalidArguments to prevent any
+    other errors
+    '''
+    if 2 > len(args) > 3:
+        await user.send(embed=debug_message(error_class="error",
+            message="Add: not sent correct number of arguments. The syntax is \nadd [squad] [role] (squad_role)",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Checks if args[0] (squad name) is a valid squad name. If not, inform the user and raise
+    InvaldArguments to prevent further errors
+    '''
+    if args[0] not in operation_object.squads:
+        await user.send(embed=debug_message(error_class="error",
+            message=f"Add: {args[0]} is not a valid squad. Please use alpha|bravo|charlie|delta",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Checks if args[2] (sl or fl) is a valid argument. If not, inform the user and raise
+    InvalidArguments to prevent further errors
+    '''
+    try:
+        if args[2] not in ["sl", "fl"]:
+            await user.send(embed=debug_message(error_class="error",
+                message=f"Add: {args[2]} is not a valid squad_role. Please use sl|fl",
+                channel_id=channel_id))
+            await ctx.message.delete()
+            raise InvalidArguments
+    except IndexError:
+        pass
+
+    squad_name = args[0]
+    role = args[1]
+    squad = operation_object.squads[squad_name]
+
+    '''
+    Check if role is an alias for another role
+    '''
+    for key, alias_set in alias_dict.items():
+        if role in alias_dict[key]:
+            role = key
+
+    '''
+    Checks that the user hasnt signed up to the squad with that role already. If they have
+    inform them they are dumb
+    '''
+    for member in squad.members:
+        if member.name == user.display_name and member.role == role:
+            await user.send(embed=debug_message(error_class="information",
+                message=f"You have the memory of a goldfish and/or cannot read. You have already signed up with that class",
+                channel_id=channel_id))
+            await ctx.message.delete()
+            raise InvalidArguments
+
+    '''
+    Checks the squad composition to see if it can accomodate the new addition
+    '''
+    if await check_squad_composition(ctx, squad, role):
+        squad.add(user.display_name, role)
+        try:
+            if args[2] == "sl":
+                squad.sl = user.display_name
+                '''
+                Checks is user being added as sl is already fl.
+                If he is fl, then remove from fl
+                '''
+                if squad.fl == user.display_name:
+                    squad.fl = None
+            if args[2] == "fl":
+                squad.fl = user.display_name
+                '''
+                Checks if user being added as fl is already sl.
+                If he is sl, then remove from sl
+                '''
+                if squad.sl == user.display_name:
+                    squad.sl = None
+        except IndexError:
+            pass
+
+    await update_operation_summary(ctx)
     await ctx.message.delete()
 
 @client.command(pass_context=True)
 async def remove(ctx, *args):
 
     user = ctx.message.author
+    channel_id = ctx.channel.id
 
+    '''
+    Checks to see if an operation has been created in the channel.
+    If not, inform the user and raise InvalidArguments to prevent further errors
+    '''
     try:
-        if 1 >= len(args) >= 2:
-            raise InvalidArguments
-        op = operation_dict[ctx.channel.id]
-        if args[0] not in op.squads:
-            raise InvalidSquad
-        squad = op.squads[args[0]]
-        if len(args) == 2:
-            user.nick = args[1]
-        squad.remove(user.nick)
-        await update_embed(ctx, args[0])
-    except KeyError:
-        await user.send("ERROR - NO operation has been created in this channel")
-    except AttributeError:
-        await user.send("ERROR - This squad does not exist")
-
-    await ctx.message.delete()
-
-@client.command(pass_context=True)
-async def create(ctx, *args):
-
-    user = ctx.message.author
-
-    create_dict = {"operation": create_operation,
-                   "squad": create_squad,
-                   "squad_template": create_squad_template}
-
-    try:
-        await create_dict[args[0]](ctx, *args)
-    except KeyError:
-        await user.send("That command does not exist")
+        operation_object = operation_dict[channel_id]
     except IndexError:
-        await create_dict["operation"](ctx, *args)
+        await user.send(embed=debug_message(error_class="error",
+            message=f"Remove: No operation created in this channel",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Checks to see if a valid squad has been provided (args[0]). If not, inform
+    the user and raise InvalidArguments to prevent further errors
+    '''
+    if args[0] not in operation_object.squads:
+        await user.send(embed=debug_message(error_class="error",
+            message="Remove: Not a valid squad name. Please choose alpha|bravo|charlie|delta",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    squad_name = args[0]
+    squad = operation_object.squads[squad_name]
+    squad.remove(user.display_name)
 
     await ctx.message.delete()
 
-async def create_operation(ctx, *args):
+async def check_squad_composition(ctx, squad, role):
 
     user = ctx.message.author
+    channel_id = ctx.channel.id
 
-    try:
-        if isinstance(operation_dict[ctx.channel.id], operation.main.Operation):
-            raise OperationExists
-    except OperationExists:
-        await user.send("ERROR - an operation already exists")
-    except KeyError:
-        operation_dict[ctx.channel.id] = operation.Operation()
-        op = operation_dict[ctx.channel.id]
-        embed_dict[ctx.channel.id] = {"op": 0, "alpha": 0, "bravo": 0, "charlie": 0, "delta": 0}
+    '''
+    Checks operation.squad.Squad.composition and returns False if there is no room.
+    Will return True if there is room OR if composition is None
+    '''
 
-        if len(args) >= 2:
-            op.set_start(args[1])
-        if len(args) == 3:
-            op.set_end(args[2])
-        embed = discord.Embed(title="Operation Created", colour = discord.Colour.green())
-        embed.set_author(name="SUCCESS!")
-        embed.add_field(name="Start Time (CEST)", value=op.start, inline=True)
-        embed.add_field(name="Start Time (CEST)", value=op.end, inline=True)
-        embed.add_field(name="To signup to the op", value="add [squad] [class]", inline=False)
-        embed.add_field(name="To remove yourself from the op", value="remove [squad] [class]", inline=False)
-        embed.set_footer(text="Run help for more information")
+    if squad.composition is None:
+        return True
 
-        #embed_msg = await ctx.send(embed=embed)
-#        embed_dict[ctx.channel.id]["op"] = embed_msg.id
-        await display_operation(ctx, ctx.channel.id)
+    '''
+    Checks if the role is in squad. If not, then it is an invalid role and the user
+    should be informed. operation.squad.SquadRole is raised to prevent any further errors
+    '''
+    if role not in squad.composition:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Role: {role} is not a valid role for squad {squad}",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise operation.squad.SquadRole
 
-async def create_squad(ctx, *args):
 
-    user = ctx.message.author
-    op = operation_dict[ctx.channel.id]
+    if squad.composition[role] >= 1:
+        return True
+    else:
+        await user.send(embed=debug_message(error_class="information",
+            message=f"Add: There is no room in the squad for that role",
+            channel_id=channel_id))
+        return False
 
-    try:
-        squad_name = args[1]
-        squad = op.create_squad(squad_name)
-        if len(args) >= 3:
-            squad.set_sl(args[2])
+async def update_operation_summary(ctx):
+
+    channel_id = ctx.channel.id
+    operation_object = operation_dict[channel_id]
+
+    '''
+    Calls the generate_embed generator. The generate_embed generator returns a discord.Embed
+    object. We will then check if an embed has already been sent for each squadby referring
+    to embed_dict. If it has, then it will update the existing embed. If not, it will send a new embed
+    '''
+
+    async for embed, squad in generate_embed(operation_object):
+        if embed_dict[channel_id][squad] and embed:
+            embed_id = embed_dict[channel_id][squad]
+            embed_message = await ctx.channel.fetch_message(embed_id)
+            await embed_message.edit(embed=embed)
+        elif embed:
+            embed_message = await ctx.send(embed=embed)
+            embed_dict[channel_id][squad] = embed_message.id
         else:
-            squad.set_sl(user.nick)
-        await update_embed(ctx, squad_name)
-    except operation.squad.SquadExists:
-        await user.send("ERROR - squad exists")
+            embed_dict[channel_id][squad] = embed
 
-async def update_embed(ctx, squad):
+async def generate_embed(operation_object):
 
-    async for embed, squad_name in generate_embed(operation_dict[ctx.channel.id]):
-        if squad == squad_name:
-            embed_id = embed_dict[ctx.channel.id][squad]
-            embed_msg = await ctx.channel.fetch_message(embed_id)
-            await embed_msg.edit(embed=embed)
-
-async def create_squad_template(ctx, *args):
-
-    user = ctx.message.author
-
-    try:
-        if len(args) != 2:
-            raise InvalidArguments
-        template = json.loads(args[1].replace("'", '"'))
-        if "name" not in template:
-            raise NoNameProperty
-        x = squad_collection.insert(template)
-        await user.send(f"Entry added to database\n{x}")
-    except InvalidArguments:
-        await user.send("Invalid Arguments")
-    except json.decoder.JSONDecodeError:
-        await user.send("Invalid template")
-    except NoNameProperty:
-        await user.send('Template needs "name" property')
-
-async def generate_embed(ops):
-
-    embed = discord.Embed(title="Operation Created", colour = discord.Colour.green())
+    '''
+    Generator that yields a discord.Embed object and the appropriate squad_name.
+    First we need to create the embed for the operation and then yield it under the squad_name "op"
+    '''
+    embed = discord.Embed(title=f"Operation {operation_object.name} Created", colour=discord.Colour.green())
     embed.set_author(name="SUCCESS!")
-    embed.add_field(name="Start Time (CEST)", value=ops.start, inline=True)
-    embed.add_field(name="Start Time (CEST)", value=ops.end, inline=True)
+    embed.add_field(name="Start Time (CEST)", value=operation_object.start, inline=True)
+    embed.add_field(name="End Time (CEST)", value=operation_object.end, inline=True)
     embed.add_field(name="To signup to the op", value="add [squad] [class]", inline=False)
-    embed.add_field(name="To remove yourself from the op", value="remove [squad] [class]", inline=False)
-    embed.set_footer(text="Run help for more information")
+    embed.add_field(name="To remove yourself from the op", value="remove [squad]", inline=False)
 
     yield embed, "op"
 
-    for squad_name, squad in ops.squads.items():
-        if squad:
-            role_dict = {}
-            embed = discord.Embed(title=f"Squad Leader: {squad.sl}", colour = squad_colour(squad_name))
-            embed.set_author(name=f"Squad: {squad_name}")
-            embed.add_field(name=f"Fireteam Lead", value=squad.fl, inline=False)
-            role_summary = ""
-            if squad.composition is not None:
-                for role, count in squad.composition.items():
-                    role_summary += f"{role}={int(count)} "
-            else:
-                role_summary = "No Restrictions"
-            embed.add_field(name=f"Composition", value=role_summary, inline=False)
-            for member, role in squad.members.items():
-                role = role.upper()
-                if role_dict.get(role) is None:
-                    role_dict[role] = [member]
-                else:
-                    role_dict[role].append(f"\n{member}")
-            for role, members in role_dict.items():
-                role = role.upper()
-                member_string = ""
-                for member in members:
-                    member_string += member
-                embed.add_field(name=role, value=member_string, inline=False)
-            embed.set_footer(text="Run help for more information")
-        else:
-            embed = discord.Embed(title="NOT CREATED", colour = discord.Colour.red())
-            embed.set_author(name=f"Squad: {squad_name}")
-            embed.add_field(name=f"To create a squad", value=f"create {squad_name} [squad_lead]", inline=False)
-            embed.set_footer(text="Run help for more information")
-
-        yield embed, squad_name
-
-
-async def display_operation(ctx, channel_id):
-
-    async for embed, squad_name in generate_embed(operation_dict[ctx.channel.id]):
-        embed_msg = await ctx.send(embed=embed)
-        embed_dict[channel_id][squad_name] = embed_msg.id
-
-def squad_colour(squad):
-
+    '''
+    A dictionary that defines the colour for the embed depending on the squad_name
+    '''
     squad_colour_dict = {"alpha": discord.Colour.green(),
             "bravo": discord.Colour.gold(),
             "charlie": discord.Colour.purple(),
             "delta": discord.Colour.dark_theme()}
 
-    return squad_colour_dict[squad]
+
+    '''
+    Now, we generate an embed for every active squad in the operation and yield. If the squad is not active, we yield None, None
+    '''
+    for squad_name, squad in operation_object.squads.items():
+        if squad:
+            embed = discord.Embed(title=f"Squad Leader: {squad.sl}", colour=squad_colour_dict[squad_name])
+            embed.set_author(name=f"Squad: {squad_name}")
+            embed.add_field(name=f"Fireteam Lead", value=squad.fl, inline=False)
+
+            #We create a nice printable version of the composition summary as opposed to str(squad.composition)
+            composition_summary = ""
+            if squad.composition:
+                for role, count in squad.composition.items():
+                    composition_summary += f"{role}={int(count)}"
+            else:
+                composition_summary = "No Restrictions"
+
+            embed.add_field(name="Composition", value=composition_summary, inline=False)
+
+            '''
+            To obtain a nice summary of each member and their role, we need to iterate through squad.members and the number of members with each role
+            squad.members is a dict ({member, role}). We create role_dict to store these values
+            '''
+
+            role_dict = {}
+            for planetman in squad.members:
+                if role_dict.get(planetman.role) is None:
+                    role_dict[planetman.role] = [(planetman.name, planetman.fisu)]
+                else:
+                    role_dict[planetman.role].append((planetman.name, planetman.fisu))
+
+            '''
+            We can now iterate through role_dict to create a nice summary of each member and their role
+            '''
+
+            for role, member in role_dict.items():
+                member_string = ""
+                for item in member:
+                    name = item[0]
+                    fisu_link = item[1]
+                    member_string += f"[{name}]({fisu_link})\n"
+                embed.add_field(name=role, value=member_string, inline=False)
+        else:
+            embed = None
+
+        yield embed, squad_name
 
 @client.command(pass_context=True)
-async def inspect(ctx, var, *args):
+async def debug(ctx, *args):
 
-    var_dict = {"op_dict": operation_dict,
-            "embed_dict": embed_dict,
-            "template_dict": template_dict}
+    '''
+    Return debug information to the channel
+    '''
 
-    await ctx.send(var_dict[var])
+    user = ctx.message.author
+    channel_id = ctx.channel.id
 
-@client.command(pass_context=True)
-async def debug(ctx):
+    try:
+        debug_message = f"{operation_dict[channel_id]}"
+        await ctx.send(debug_message)
 
-    message = ""
-    op = operation_dict[ctx.channel.id]
-    message += f"{op}"
-    squads = op.squads
-    message += "\n################\n"
-    for squad in squads:
-        message += f"{squads[squad]}"
+        debug_message = f"history_dict {history_dict[channel_id]}"
+        await ctx.send(debug_message)
 
-    await ctx.send(message)
+        debug_message = f"embed_dict {embed_dict[channel_id]}"
+        await ctx.send(debug_message)
+    except KeyError:
+        pass
+
+    debug_message = f"alias_dict {alias_dict}"
+    await ctx.send(debug_message)
+
+    await ctx.message.delete()
+
+def update_history_dict(channel_id, message):
+
+    if channel_id in history_dict:
+        history_dict[channel_id].append(message)
+    else:
+        history_dict[channel_id] = [message]
 
 client.run(TOKEN)
+

@@ -1,10 +1,13 @@
-import operation
+from operation import squad, main
 
 if __name__ == "__main__":
 
-    op = operation.Operation()
+    operation = main.Operation(name="Never Die")
+    squadA = operation.create_squad("alpha")
+    squadB = operation.create_squad("bravo")
+#    squadC = operation.create_squad("alpha")
 
-    op.create_squad("alpha")
-    squad = op.squads["alpha"]
-    squad.set_comp({"HA": 0})
-    squad.add("me", "HB")
+    squadA.sl = "Michael"
+    squadB.sl = "Bob"
+
+    print(operation)

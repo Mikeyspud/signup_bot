@@ -2,14 +2,15 @@ from datetime import datetime
 
 from .squad import Squad, SquadExists
 from .platoon import Platoon
+from .planetman import Planetman
 
 class Operation:
 
-    def __init__(self):
+    def __init__(self, name=None, start=None, end=None):
 
-        self.name = None
-        self.start = None
-        self.end = None
+        self.name = name
+        self.start = start
+        self.end = end
         self.squads = {"alpha": None, 
                 "bravo": None,
                 "charlie": None,
@@ -17,32 +18,25 @@ class Operation:
 
     def __str__(self):
 
-        squads_present = ""
-        for key, value in self.squads.items():
-            if value is not None:
-                squads_present += f"{key} "
+        return str(self.__dict__)
 
-        message = f"""Operation Name: {self.name}
-                \tStart Time: {self.start}
-                \tEnd Time: {self.end}
-                \tSquads Present: {squads_present}"""
+    def __repr__(self):
 
-        return message
-
-
-
-    def set_start(self, start):
-
-        self.start = datetime.strptime(start, "%d/%m/%Y %H:%M")
-
-    def set_end(self, end):
-
-        self.end = datetime.strptime(end, "%d/%m/%Y %H:%M")
+        return repr(self.__repr__)
 
     def create_squad(self, squad_name):
 
-        if self.squads[squad_name] is None:
-            self.squads[squad_name] = Squad()
-            return self.squads[squad_name]
-        else:
-            raise SquadExists
+        '''
+        Creates a squad and returns the squad object. Will raise an error if;
+            Squad name is invalid
+            Squad has already been created
+        '''
+
+        try:
+            if isinstance(self.squads[squad_name], Squad):
+                raise SquadExists
+            else:
+                self.squads[squad_name] = Squad()
+                return self.squads[squad_name]
+        except KeyError:
+            InvalidSquad
