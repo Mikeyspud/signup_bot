@@ -2,8 +2,8 @@
 
 Requires mongodb installed
 
-Still to do:
-  Fix squad composition parsing
-  Fix squad composition templates not loading
-  Implement squad capacity and overflow
-  Implement smart squad assignment
+Still to do:<br />
+  Fix squad composition parsing<br />
+  Fix squad composition templates not loading<br />
+  Implement squad capacity and overflow<br />
+  Implement smart squad assignment<br />
