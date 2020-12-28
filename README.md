@@ -7,3 +7,4 @@ Still to do:<br />
   Fix squad composition templates not loading<br />
   Implement squad capacity and overflow<br />
   Implement smart squad assignment<br />
+  Squad templates<br />
