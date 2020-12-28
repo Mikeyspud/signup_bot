@@ -8,6 +8,7 @@ class Squad:
         self.fl = fl
         self.composition = composition
         self.members = []
+        self.capacity = 12
 
     def __str__(self):
 

@@ -17,10 +17,10 @@ squad_db = mongo_client["squad_template"]
 squad_collection = squad_db["template"]
 
 op_db = mongo_client["operation_template"]
-op_collection = mongo_client["template"]
+op_collection = op_db["template"]
 
 alias_db = mongo_client["alias"]
-alias_collection = mongo_client["alias"]
+alias_collection = alias_db["alias"]
 
 #General Global Variables
 #Holds the discord channel id's where operations have been started
@@ -48,6 +48,170 @@ client.remove_command("help")
 @client.event
 async def on_ready():
     print(f"{client.user} has connected to discord")
+
+
+@client.command(pass_context=True)
+async def show(ctx, *args):
+
+    show_dict = {"template": show_template}
+
+    try:
+        command = args[0]
+    except:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Show: syntax is as follows = .show [object]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    await show_dict[command](ctx, *args)
+    await ctx.message.delete()
+
+
+async def show_template(ctx, *args):
+
+    message = ""
+    cursor = op_collection.find({}, {"_id": False})
+    for document in cursor:
+          message += f"{document}\n"
+    await ctx.channel.send(message)
+
+@client.command(pass_context=True)
+async def close(ctx, *args):
+
+    user = ctx.message.author
+    channel_id = ctx.channel.id
+
+    try:
+        del operation_dict[channel_id]
+    except KeyError:
+        pass
+
+    for message_id in embed_dict[channel_id]:
+        channel = await client.get_channel(channel_id)
+        message = await channel.fetch_message(message_id)
+        await client.delete_message(message)
+
+    try:
+        del embed_dict[channel_id]
+    except KeyError:
+        pass
+
+    try:
+        del history_dict[channel_id]
+    except KeyError:
+        pass
+
+@client.command(pass_context=True)
+async def load(ctx, *args):
+
+    '''
+    Loads commands from the database
+    '''
+
+    user = ctx.message.author
+    channel_id = ctx.channel.id
+
+    '''
+    Checks if args[0] exists. If not, inform the user and raise InvalidArguments to
+    prevent further errors
+    '''
+    try:
+        template_name = args[0]
+    except IndexError:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Load: syntax is as follows = .load [template_name]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    template = op_collection.find_one({template_name : {'$exists': True}}, {'_id': False})
+    if len(template) == 0:
+        await user.send(embed=debug_message(error_class="information",
+            message=f"Load: There is no template called {template_name}",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+    else:
+        await install_template(ctx, template[template_name])
+
+async def install_template(ctx, template):
+
+    for full_command in template:
+        command = full_command.split(" ")[:1][0][1:]
+        positional_arg = full_command.split(" ")[1:]
+        command = client.get_command(command)
+        await command(ctx, *positional_arg)
+
+    await ctx.message.delete()
+
+@client.command(pass_context=True)
+async def save(ctx, *args):
+
+    '''
+    Saves the command history as a template
+    '''
+
+    user = ctx.message.author
+    channel_id = ctx.channel.id
+
+    '''
+    Checks if args[0] exists. If not inform the user and raise InvalidArguments to
+    prevent further errors
+    '''
+    try:
+        template_name = args[0]
+    except IndexError:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Save: syntax is as follows = .save [template_name]",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise InvalidArguments
+
+    '''
+    Attempts to extract command history for an operation. If an operation does not exist
+    in that channel. Inform the user and raise NoOperationExists to prevent further errors
+    and inform the user
+    '''
+    try:
+        template = {template_name :history_dict[channel_id]}
+    except KeyError:
+        await user.send(embed=debug_message(error_class="warning",
+            message=f"Save: Operation has not been created yet in this channel",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise NoOperationExists
+
+    '''
+    To stop users from saving empty templates, raise EmptyTemplate error
+    '''
+    if len(template[template_name]) < 1:
+        await use.send(embed=debug_message(error_class="warning",
+            message=f"Save: Template is empty",
+            channel_id=channel_id))
+        await ctx.message.delete()
+        raise EmptyTemplate
+
+    count = op_collection.count_documents({template_name :{'$exists': True}})
+    if count == 0:
+        op_collection.insert_one(template)
+    else:
+        op_collection.find_one_and_update({template_name: {'$exists': True}}, {'$set':{template_name: template[template_name]}})
+    await ctx.message.delete()
+
+@client.command(pass_context=True)
+async def help(ctx, *args):
+
+    user = ctx.message.author
+    channel_id = ctx.channel.id
+
+    try:
+        command = args[0]
+    except:
+        command = None
+
+    await user.send(embed=help_message(command))
+    await ctx.message.delete()
 
 
 '''
@@ -111,8 +275,7 @@ async def alias(ctx, *args):
     Updates the alias database entry on mongodb. First, the alias_set needs to be
     converted into a JSON String
     '''
-    #json_alias_dict = json.loads(alias_dict)
-    #alias_collection.insert(alias_dict)
+    alias_collection.insert_one(parse_alias_dict(role=role))
 
     await ctx.message.delete()
 
@@ -138,6 +301,7 @@ async def create(ctx, *args):
     user = ctx.message.author
     channel_id = ctx.channel.id
 
+    await ctx.channel.send(args)
     '''
     The list of arguments for the create command
 
@@ -174,7 +338,11 @@ async def create(ctx, *args):
             channel_id=channel_id))
 
     update_history_dict(channel_id, ctx.message.content)
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except discord.errors.NotFound:
+        pass
+
 
 async def create_operation(ctx, *args):
 
@@ -192,7 +360,10 @@ async def create_operation(ctx, *args):
         await user.send(embed=debug_message(error_class="warning",
             message=f"Command create operation - takes the following positional arguments\n[name]",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise InvalidArguments
 
     '''
@@ -226,7 +397,10 @@ async def create_squad(ctx, *args):
         await user.send(embed=debug_message(error_class="warning",
             message=f"Command create squad - takes the following positional arguments\n[squad_name]",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise InvalidArguments
 
     '''
@@ -237,7 +411,10 @@ async def create_squad(ctx, *args):
         await user.send(embed=debug_message(error_class="error",
             message=f"Operation: does not exist in this channel. Please create one",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise NoOperationExists
 
     '''
@@ -264,6 +441,8 @@ async def squad(ctx, *args):
     user = ctx.message.author
     channel_id = ctx.channel.id
 
+    await ctx.channel.send(args)
+
     '''
     The list of arguments for the squad command
 
@@ -282,7 +461,12 @@ async def squad(ctx, *args):
         await user.send(embed=debug_message(error_class="warning",
             message=f"Command: squad takes the following argument {command_list} - Exmaple: squad alpha sl bob",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
+
+
         raise InvalidArguments
 
     '''
@@ -294,7 +478,10 @@ async def squad(ctx, *args):
         await user.send(embed=debug_message(error_class="information",
             message=f"Command: squad - takes the following arguments {command_list} - Example: squad alpha sl bob",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise InvalidArguments
     else:
         command = args[1]
@@ -309,7 +496,10 @@ async def squad(ctx, *args):
         await user.send(embed=debug_message(error_class="error",
             message="Squad: No operation created in this channel yet",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise NoOperationExists
 
 
@@ -321,7 +511,10 @@ async def squad(ctx, *args):
         await user.send(embed=debug_message(error_class="error",
             message=f"Squad: {args[0]} is not a valid squad. Please use alpha|bravo|charlie|delta",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise InvalidArguments
     else:
         squad_name = args[0]
@@ -343,7 +536,12 @@ async def squad(ctx, *args):
             await user.send(embed=debug_message(error_class="warning",
                 message=f"Squad: {args[0]} composition {args[2]} is not a valid composition\nNeeds to be JSON String",
                 channel_id=channel_id))
-            await ctx.message.delete()
+            try:
+                await ctx.message.delete()
+            except discord.errors.NotFound:
+                pass
+
+
             raise InvalidArguments
     elif command == "sl":
         squad_leader = args[2]
@@ -353,7 +551,12 @@ async def squad(ctx, *args):
         squad.fl = fireteam_leader
 
     await update_operation_summary(ctx)
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except discord.errors.NotFound:
+        pass
+
+
 
 @client.command(pass_context=True)
 async def squad_composition(ctx, *args):
@@ -371,7 +574,10 @@ async def squad_composition(ctx, *args):
         await user.send(embed=debug_message(error_class="error",
             message="Squad: No operation created in this channel yet",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise NoOperationExists
 
     '''
@@ -383,7 +589,10 @@ async def squad_composition(ctx, *args):
         await user.send(embed=debug_message(error_class="error",
             message="Add: not sent correct number of arguments. The syntax is \nsquad [squad_name] composition [composition]",
             channel_id=channel_id))
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except discord.errors.NotFound:
+            pass
         raise InvalidArguments
 
 
@@ -622,7 +831,7 @@ async def generate_embed(operation_object):
             composition_summary = ""
             if squad.composition:
                 for role, count in squad.composition.items():
-                    composition_summary += f"{role}={int(count)}"
+                    composition_summary += f"{role}={int(count)}  "
             else:
                 composition_summary = "No Restrictions"
 
@@ -690,5 +899,134 @@ def update_history_dict(channel_id, message):
     else:
         history_dict[channel_id] = [message]
 
-client.run(TOKEN)
+def parse_alias_dict(role=None):
 
+    '''
+    pymongo does not contain a codec for python set objects. So we need to
+    parse the alias_dict into a form where the values are lists and not sets.
+    '''
+
+    parsed_alias_dict = {}
+
+    if role:
+        parsed_alias_dict[role] = list(alias_dict[role])
+    else:
+        for role in alias:
+            parsed_alias_dict[role] = list(alias_dict[role])
+
+    return parsed_alias_dict
+
+def update_alias_dict():
+
+    query = alias_collection.find({}, {'_id': False})
+    for document in query:
+        for role in document:
+            document[role] = set(document[role])
+        alias_dict.update(document)
+
+def basic_help_message():
+
+    help_string = '''
+    .add [ alpha | bravo | charlie | delta ] [ role ]
+    - Signs you up to [ role ] in referenced squad
+
+    OR
+
+    .add [ role ]
+    - Signs you up to a squad that needs you most
+    - Note: NOT IMPLEMENTED YET
+    '''
+
+    embed = discord.Embed(title="Welcome to BJay's Signup Bot (Beta)", colour=discord.Colour.from_rgb(r=0, g=255, b=255))
+    embed.set_author(name="BJay Signup Bot")
+    embed.add_field(name="How to Sign Up", value=help_string)
+    embed.set_footer(text="Run .help adv for more information")
+
+    return embed
+
+
+def help_message(command=None):
+
+    available_commands = ".create .squad .add .remove .alias"
+
+    if command is None:
+        return basic_help_message()
+    elif command not in available_commands:
+        command = available_commands
+
+    create_help = '''
+    .create operation [ name ]
+    - Creates an operation called [ name ] in the channel.
+
+    .create squad [ alpha | bravo | charlie | delta ]
+    - Creates an empty squad for the operation in that channel.
+    '''
+
+    squad_help = '''
+    .squad [ alpha | bravo | charlie | delta ] [ composition | sl | fl ]
+
+    .squad alpha composition [composition]
+    - Creates the composition for squad Alpha.
+    - Note: [ composition ] must be a JSON String.
+    - Example: squad alpha composition "{'HA': 2, 'ENG': 1}".
+
+    .squad alpha sl [ sl ]
+    - Assigns [ sl ] as the squad leader of alpha.
+    - Note: Assigning of squad leaders using this method is not the preferable method. (See .add).
+
+    .squad alpha fl [ fl ]
+    - Assigns [ fl ] as the fireteam leader of alpha.
+    - Note: Assigning of the fireteam leaders using this methid is not the preferable method. (See .add).
+
+    - Note: [ sl ] and [ fl ] do not need to be valid ps2 usernames for fisu functionality. (There is none for sl,fl).
+    '''
+
+    add_help = '''
+    .add [ alpha | bravo | charlie | delta ] [ role ] [ sl | fl ]
+    - Adds the author of the message to the squad with the [ role ].
+    - [ sl | fl ] are optional arguments to allow the assignment of squad leaders.
+    - Note: Assigning squad leaders / fireteam leaders this way is perferred. It allows integration of .remove.
+    - Note: If the composition does not allow the addition of the role, then the command will fail.
+    - Note: A squad member cannot be both squad leader and fireteam leader.
+    - Note: [ role ] can be any alias (see .alias).
+    - Note: To allow fisu functionality, the authors nickname/username must be his/her PS2 Username.
+    '''
+
+    remove_help = '''
+    .remove [ alpha | bravo | charlie | delta ]
+    - Removes the author of the message from the squad.
+    - Note: If author is also squad leader or fireteam leader. Then he/she will be removed from this role also.
+    '''
+
+    alias_help = '''
+    .alias [role] [alias....infinity]
+    - Example: ".alias HA heavy_assault" will allow a member to sign up as HA with the command ".add alpha heavy_assault"
+    - Adds all the aliases to the role to allow flexible .add commands
+    - Note: Changes to alias persist across all future operations, therefor, this command should be left to squad leaders and above. Im trusting you ;).
+            Please dont make me have to implement privileges!!!
+    '''
+
+    embed = discord.Embed(title="Welcome to BJay's Signup Bot (Beta)", colour=discord.Colour.from_rgb(r=0, g=255, b=255))
+    embed.set_author(name="BJay Signup Bot")
+    embed.add_field(name="Example Operation", value=".create operation example\n.create squad alpha", inline=False)
+    embed.add_field(name="Note", value="Most command arguments in BJay Signup Bot are positional. However, there are a few exceptions.", inline=False)
+    if "create" in command:
+        embed.add_field(name=".create", value=create_help, inline=False)
+
+    if "squad" in command:
+        embed.add_field(name=".squad", value=squad_help, inline=False)
+
+    if "add" in command:
+        embed.add_field(name=".add", value=add_help, inline=False)
+
+    if "remove" in command:
+        embed.add_field(name=".remove", value=remove_help, inline=False)
+
+    if "alias" in command:
+        embed.add_field(name=".alias", value=alias_help, inline=False)
+
+    return embed
+
+
+update_alias_dict()
+client.run(TOKEN)

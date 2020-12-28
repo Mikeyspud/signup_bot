@@ -3,6 +3,9 @@ import discord
 class Error(Exception):
     pass
 
+class EmptyTemplate(Error):
+    pass
+
 class NoOperationExists(Error):
     pass
 
