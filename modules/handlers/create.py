@@ -57,7 +57,7 @@ class Create(handler.Handler):
         functions.update_history_dict(
             self.channel_id, self.ctx.message.content)
 
-    async def create_operation(self):
+    async def op(self):
 
         '''
         sub_command 'operation' for '.create' command.
