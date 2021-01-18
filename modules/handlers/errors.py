@@ -26,7 +26,7 @@ class Error(Exception):
 
     def _classname(self):
 
-        cls = type(obj)
+        cls = type(self)
         module = cls.__module__
         name = cls.__qualname__
         if module is not None and module != "__builtin__":

@@ -3,7 +3,7 @@ import pymongo  # mongodb API
 import discord  # discord API
 from discord.ext import commands  # discord API
 
-from modules import handlers, settings, functions, constructors
+from modules import handlers, settings, functions
 
 # Command Prefix (This can be changed without adverse affects)
 client = commands.Bot(command_prefix=".")
