@@ -1,24 +1,19 @@
-import pymongo                          #mongodb API
-import discord                          #discord API
-from discord.ext import commands        #discord API
+import json
+import pymongo  # mongodb API
+import discord  # discord API
+from discord.ext import commands  # discord API
 
-from modules import handlers, 
-    settings,
-    functions
+from modules import handlers, settings, functions, constructors
 
-
-#TOKEN required to authenticate with Discord API Servers
-TOKEN = open("token.txt", "r").readline()
-
-#Command Prefix (This can be changed without adverse affects)
+# Command Prefix (This can be changed without adverse affects)
 client = commands.Bot(command_prefix=".")
 
-#Removes the built-in help command so that we can add our own later
+# Removes the built-in help command so that we can add our own later
 client.remove_command("help")
+
 
 @client.event
 async def on_ready():
-    settings.init()
     print(f"{client.user} has connected to discord")
 
 
@@ -113,12 +108,12 @@ async def debug(ctx, *args):
     handler = handlers.Debug(ctx, *args)
     await handler()
 
-
 '''
 We pull the alias data from the database and immediately load it into memory
 because i dont know tbh
 
 maybe change it later
 '''
+settings.init()
 functions.update_alias_dict()
-client.run(TOKEN)
+client.run(settings.token)

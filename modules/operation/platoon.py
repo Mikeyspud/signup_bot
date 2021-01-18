@@ -1,5 +1,6 @@
 from .squad import Squad
 
+
 class Platoon:
 
     def __init__(self, pl, alpha, bravo=None, charlie=None, delta=None):

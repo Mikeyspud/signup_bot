@@ -2,13 +2,14 @@ import discord
 from . import errors, handler
 from modules import settings
 
+
 class Squad(handler.Handler):
 
     async def __call__(self):
 
         sub_commands = {"composition": self.composition,
-                "sl": self.sl,
-                "fl": self.fl}
+                        "sl": self.sl,
+                        "fl": self.fl}
 
         '''
         Extract the argument (args[1]) from the .create [squad] [argument] command
@@ -17,7 +18,7 @@ class Squad(handler.Handler):
         try:
             self.squad_name = self.args[0]
             sub_command = self.args[1]
-        except:
+        except BaseException:
             await self.help()
             await self.error(InvalidArguments, "Argument [ sl | fl | composition ] missing")
 
@@ -27,7 +28,6 @@ class Squad(handler.Handler):
         if sub_command not in sub_commands:
             await self.help()
             await self.error(InvalidArguments, f"Argument {sub_command} is invalid")
-
 
         '''
         Check to see if an operatio has been initialised in the channel
@@ -84,51 +84,39 @@ class Squad(handler.Handler):
     async def help(self):
 
         embed = settings.help_embed()
-        embed.add_field(name="Command:", 
-                value="Allows a user to assign SL, FL and composition", 
-                inline=False)
+        embed.add_field(name="Command:",
+                        value="Allows a user to assign SL, FL and composition",
+                        inline=False)
         embed.add_field(name=".squad [squad_name] sl [sl]",
-                value='''Assigns [sl] as SL for squad [squad_name]. 
+                        value='''Assigns [sl] as SL for squad [squad_name].
                 If [sl] is not supplied, [sl] is set to the user who sent the message''',
-                inline=False)
+                        inline=False)
         embed.add_field(name=".squad [squad_name] fl [fl]",
-                value='''Assigns [fl] as FL for squad [squad_name]. 
-                If [fl] is not supplied, [fl] is set to the user who sent the message''', 
-                inline=False)
-        embed.add_field(name=".squad [squad_name] composition [composition", 
-                value="Sets the composition of the squad", 
-                inline=False)
+                        value='''Assigns [fl] as FL for squad [squad_name].
+                If [fl] is not supplied, [fl] is set to the user who sent the message''',
+                        inline=False)
+        embed.add_field(name=".squad [squad_name] composition [composition",
+                        value="Sets the composition of the squad",
+                        inline=False)
 
         await self.user.send(embed=embed)
 
 
 class InvalidArguments(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.squad.InvalidArguments", inline=False)
+    pass
 
 
 class NoOperationExists(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.squad.NoOperationExists", inline=False)
+    pass
 
 
 class InvalidSquadName(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.squad.InvalidSquadName", inline=False)
+    pass
 
 
 class InvalidComposition(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.squad.InvalidComposition", inline=False)
+    pass

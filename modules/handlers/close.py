@@ -4,6 +4,7 @@ import discord                          # Discord API
 
 from . import errors, handler
 
+
 class Close(handler.Handler):
 
     def __init__(self, ctx, client, *args):
@@ -15,7 +16,7 @@ class Close(handler.Handler):
 
         try:
             sub_command = self.args[0]
-        except:
+        except BaseException:
             pass
 
         if sub_command == "help":
@@ -47,11 +48,12 @@ class Close(handler.Handler):
     async def help(self):
 
         embed = settings.helf_embed()
-        embed.add_field(name="Command:", value="Allows the user to close an operation in a channel", inline=False)
+        embed.add_field(
+            name="Command:",
+            value="Allows the user to close an operation in a channel",
+            inline=False)
+
 
 class InvalidArguments(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        errors.Error.__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.show.InvalidArguments", inline=False)
+    pass

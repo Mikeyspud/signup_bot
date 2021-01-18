@@ -2,6 +2,7 @@ import discord
 from modules import settings
 from . import errors, handler
 
+
 class Alias(handler.Handler):
 
     async def __call__(self):
@@ -44,30 +45,28 @@ class Alias(handler.Handler):
     async def help(self):
 
         embed = settings.help_embed()
-        embed.add_field(name="Command:", value="Allows a user to create an alias for a role", inline=False)
-        embed.add_field(name=".alias [role] [alias]", value="Creates alias [alias] for [role]", inline=True)
+        embed.add_field(
+            name="Command:",
+            value="Allows a user to create an alias for a role",
+            inline=False)
+        embed.add_field(
+            name=".alias [role] [alias]",
+            value="Creates alias [alias] for [role]",
+            inline=True)
 
         await self.user.send(embed=embed)
 
 
 class InvalidArguments(errors.Error):
 
-    def __init__(self, ctx, error):
+    pass
 
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.alias.InvalidArguments", inline=False)
 
 class AliasIsRole(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.alias.AliasIsRole", inline=False)
+    pass
 
 
 class AliasIsAliasForOtherRole(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.alias.AliasIsAliasForOtherRole", inline=False)
+    pass

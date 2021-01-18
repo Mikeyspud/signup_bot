@@ -23,7 +23,7 @@ class Remove(handler.Handler):
         '''
         try:
             squad_name = self.args[0]
-        except:
+        except BaseException:
             await self.help()
             await self.error(InvalidArguments, "Invalid Arguments")
 
@@ -37,39 +37,26 @@ class Remove(handler.Handler):
     async def help(self):
 
         embed = settings.help_embed()
-        embed.add_field(name="Command:", 
-                value="Allows a user to remove themselves from squad",
-                inline=False)
+        embed.add_field(name="Command:",
+                        value="Allows a user to remove themselves from squad",
+                        inline=False)
         embed.add_field(name=".remove [squad]",
-                value="Removes user from squad [squad]",
-                inline=False)
+                        value="Removes user from squad [squad]",
+                        inline=False)
 
         await self.user.send(embed=embed)
 
 
 class NoOperationExists(errors.Error):
 
-    def __init__(self, ctx, error):
+    pass
 
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception",
-                value="handlers.remove.NoOperationExists",
-                inline=False)
 
 class InvalidArguments(errors.Error):
 
-    def __init__(self, ctx, error):
+    pass
 
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception",
-                value="handlers.remove.InvalidArguments",
-                inline=False)
 
 class InvalidSquadName(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception",
-                value="handlers.remove.InvalidSquadName",
-                inline=False)
+    pass

@@ -4,6 +4,7 @@ import discord                          # Discord API
 
 from . import errors, handler
 
+
 class Show(handler.Handler):
 
     '''
@@ -27,7 +28,7 @@ class Show(handler.Handler):
 
         try:
             sub_command = self.args[0]
-        except:
+        except BaseException:
             await self.help()
             await self.error(InvalidArguments, "No arguments supplied")
 
@@ -46,15 +47,18 @@ class Show(handler.Handler):
     async def help(self):
 
         embed = settings.help_embed()
-        embed.add_field(name="Command:", value="Allows a user to retrieve data from the database", inline=False)
-        embed.add_field(name=".show template [template name]", value="Retrieves template from database\nOptional:\n- [template_name]", inline=True)
+        embed.add_field(
+            name="Command:",
+            value="Allows a user to retrieve data from the database",
+            inline=False)
+        embed.add_field(
+            name=".show template [template name]",
+            value="Retrieves template from database\nOptional:\n- [template_name]",
+            inline=True)
 
         await self.user.send(embed=embed)
 
 
 class InvalidArguments(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        super().__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.show.InvalidArguments", inline=False)
+    pass

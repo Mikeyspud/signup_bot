@@ -6,4 +6,3 @@ from .close import Close
 from .load import Load
 from .save import Save
 from .squad import Squad
-from .error import Error

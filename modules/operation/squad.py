@@ -1,5 +1,6 @@
 from .planetman import Planetman
 
+
 class Squad:
 
     def __init__(self, sl=None, fl=None, composition=None):
@@ -19,7 +20,6 @@ class Squad:
         return repr(self.__dict__)
 
     def add(self, name, role):
-
         '''
         Checks if the composition of the squad will allow the adition
         of the new squad member. Should composition be undefined, it is caught
@@ -55,9 +55,8 @@ class Squad:
             return False
 
     def remove(self, name):
-
         '''
-        Iterates through self.members (List) looking for any Planetman 
+        Iterates through self.members (List) looking for any Planetman
         object with the Planetman.name as name and removes from the members
         list
         '''
@@ -66,7 +65,7 @@ class Squad:
             if member.name == name:
                 try:
                     self.composition[member.role] += 1
-                except:
+                except BaseException:
                     pass
                 del self.members[index]
 
@@ -81,17 +80,21 @@ class Squad:
         if self.fl == name:
             self.fl = None
 
+
 class SquadError(Exception):
 
     pass
+
 
 class SquadExists(SquadError):
 
     pass
 
+
 class SquadCapacity(SquadError):
 
     pass
+
 
 class SquadRole(SquadError):
 

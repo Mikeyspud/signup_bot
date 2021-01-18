@@ -1,5 +1,6 @@
 fisu_link = "https://ps2.fisu.pw/player/?name="
 
+
 class Planetman:
 
     def __init__(self, name, role):

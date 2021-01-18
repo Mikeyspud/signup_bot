@@ -2,6 +2,7 @@ import discord
 from modules import settings
 from . import errors, handler
 
+
 class Save(handler.Handler):
 
     async def __call__(self):
@@ -22,30 +23,32 @@ class Save(handler.Handler):
             await self.help()
             await self.error(EmptyTemplate, "Template is empty")
 
-        count = op_collection.count_documents({template_name: {'$exists': True}})
+        count = op_collection.count_documents(
+            {template_name: {'$exists': True}})
         if count == 0:
             op_collection.insert_one(template)
         else:
-            op_collection.find_one_and_update({template_name: {'$exists': True}},{'$set' : {template_name: template[template_name]}})
+            op_collection.find_one_and_update({template_name: {'$exists': True}}, {
+                                              '$set': {template_name: template[template_name]}})
 
     async def help(self):
 
         embed = settings.help_embed()
-        embed.add_field(name="Command:", value="Allows a user to save command history")
-        embed.add_field(name=".save [template_name]", value="Saves command history by name [template_name]")
+        embed.add_field(
+            name="Command:",
+            value="Allows a user to save command history")
+        embed.add_field(
+            name=".save [template_name]",
+            value="Saves command history by name [template_name]")
 
         await self.user.send(embed=embed)
 
+
 class NoOperation(errors.Error):
 
-    def __init__(self, ctx, error):
+    pass
 
-        errors.Error.__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.save.NoOperation", inline=False)
 
 class InvalidArguments(errors.Error):
 
-    def __init__(self, ctx, error):
-
-        errors.Error.__init__(self, ctx, error)
-        self.embed.add_field(name="Exception", value="handlers.save.InvalidArguments", inline=False)
+    pass
