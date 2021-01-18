@@ -22,7 +22,7 @@ class Create(handler.Handler):
     '.create [sub_command]'
 
     'sub_command';
-        'operation' will result in Create.operation()
+        'operation' will result in Create.op()
         being called.
 
         'squad' will result in Create.squad() being
@@ -57,7 +57,7 @@ class Create(handler.Handler):
         functions.update_history_dict(
             self.channel_id, self.ctx.message.content)
 
-    async def op(self):
+    async def create_operation(self):
 
         '''
         sub_command 'operation' for '.create' command.
@@ -128,7 +128,11 @@ class Create(handler.Handler):
             await self.help()
             await self.error(SquadExists, "Squad already exists")
         else:
-            self.operation.create_squad(squad_name)
+            self._create_squad(squad_name)
+
+    def _create_squad(self, squad_name):
+
+        self.operation.create_squad(squad_name)
 
     async def help(self):
 
